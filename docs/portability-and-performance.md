@@ -25,6 +25,12 @@ The guiding loop was: **page → indexed elements → operation + target → exe
 | 15 | `browser.py` | Fully backgrounded owned tabs can stop painting modal menus (Windows) | `TYPESAFE_FOREGROUND=1` creates the owned tab in the foreground | Portability |
 | 16 | `README.md` | Model-call budget (`MAX_STEPS × 2`) was undocumented | Documented; two tests added (`test_model_call_budget_blocks_after_max_steps_twice`, `test_empty_first_observation_reobserves_before_choosing`) | Documentation |
 | 17 | `README.md` | Clone URL pointed at the upstream repo, not the fork | Points to `github.com/atharvaHJoshi/jev-ultrafast`; provider/key docs added | Documentation |
+| 18 | `model.py` | `ALL_PROXY=socks5://…` crashed the client at construction without `socksio` | Client built with `trust_env=False`; SOCKS proxies ignored, explicit `TYPESAFE_HTTP_PROXY` wins | Portability |
+| 19 | `browser.py`, `README.md` | Browser Harness attached to the user's everyday Chrome with no warning | `BU_CDP_WS` documented; a warning prints when the attached browser already has personal tabs | Documentation |
+| 20 | `browser.py` | Foreground tab env only set `background=False`; focus emulation still did not restore paint priority on Windows | `Page.bringToFront` is now also called when foreground is requested (`TYPESAFE_FOREGROUND` or `JEV_FOREGROUND`) | Robustness |
+| 21 | `browser.py` | Post-input wait gave combobox-style controls only 50 ms and only for `fill`, so clicked menus stayed occluded | Combobox `click` now gets the same 300 ms option-readiness window as `fill` | Robustness |
+| 22 | `snapshot.js` | Element table missed clickable non-native rows (bare `<li>`/`<div>`/`<span>`), so suggestion lists were unreachable | Bounded second pass for pointer-cursor rows in positioned layers or pointer-cursor sibling lists; innermost only, capped | Robustness |
+| 23 | `browser.py`, `agent.py` | A slow daemon's screenshot timeout stalled the run even though screenshots are optional | Screenshot failure is non-fatal (`observe` returns `screenshot=None`; recording skips missing frames) | Robustness |
 
 ---
 
@@ -145,13 +151,26 @@ All checks pass (run with the project-backed tooling; `uv` was not installed in 
 | Check | Command | Result |
 | --- | --- | --- |
 | Lint | `ruff check .` | All checks passed |
-| Tests | `pytest` | 31 passed |
+| Tests | `pytest` | 39 passed |
 | JS syntax | `node --check jev_ultrafast/static/app.js` | OK |
 | JS syntax | `node --check jev_ultrafast/snapshot.js` | OK |
 | Package | `python -m build --wheel` | Built `jev_ultrafast-0.1.0-py3-none-any.whl` |
 | Demo server | start + GET `/`, `/app.js`, `/api/state`, unknown path | 200 / 200 / 200 / 404 |
 
-All 31 existing tests pass unchanged — the public behavior (choice contract, retry/cache rules, `DONE` verification, execution-first logging) is preserved.
+All 39 tests pass — the public behavior (choice contract, retry/cache rules, `DONE` verification, execution-first logging) is preserved.
+
+## Design boundary (issue #26)
+
+This project intentionally draws the line **between observed facts and the decision itself**:
+
+1. **The Runtime proves and limits facts.** It observes the page atomically, assigns stable element indices, filters to supported visible controls, builds operation-specific target sets, checks freshness and occlusion before executing, and logs execution before observing the result. These are mechanically checkable properties, so they belong in code, not in a model.
+2. **The provider chooses *within* that grounded space.** TypeSafe picks an operation and an operation-specific target from observed elements only. Code converts that choice into the click/type/select — model output never becomes selectors, coordinates, or scripts.
+3. **The Runtime does not encode task judgement.** Schedules, forms, or per-site rules never enter the loop. The goal decides; the policy supplies plain next-step rules; `DONE` is verified independently (a `DONE` choice is not proof of success).
+
+On the two boundary questions raised in #26:
+
+- **"No useful action" vs "option not exposed"** — the exposed table is exactly the supported action space, and the two live together: an empty or collapsed table is rare and now handled by re-observing (see 14 above). The Runtime's job is to make the table *as complete and as small as it honestly can* (the bounded non-native-clickable pass is exactly that, see 22) and to say `BLOCKED` only when no supported operation can progress. Because the loop re-observes before choosing, a transiently hidden control does not become a fake `BLOCKED`.
+- **Where the line sits** — facts that a browser can answer are hard constraints in the Runtime; which available action advances the goal stays judgment for the decision provider. This keeps the Runtime provider-agnostic: swap TypeSafe for another model and the same observed, grounded action space is served.
 
 ## What was intentionally not changed
 

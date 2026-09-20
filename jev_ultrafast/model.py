@@ -22,12 +22,29 @@ def _http():
         with _CLIENT_LOCK:
             if _CLIENT is None:
                 timeout = float(os.environ.get("MODEL_TIMEOUT", "25"))
+                proxy = _http_proxy()
                 try:
-                    _CLIENT = httpx.Client(http2=True, timeout=timeout)
+                    _CLIENT = httpx.Client(http2=True, timeout=timeout, trust_env=False, proxy=proxy)
                 except ImportError:
-                    _CLIENT = httpx.Client(timeout=timeout)
+                    if proxy and proxy.lower().startswith("socks"):
+                        proxy = None
+                    _CLIENT = httpx.Client(timeout=timeout, trust_env=False, proxy=proxy)
                 atexit.register(_CLIENT.close)
     return _CLIENT
+
+
+def _http_proxy():
+    """Pick an HTTP(S) proxy for the API calls, ignoring SOCKS URLs.
+
+    The proxy environment can carry `ALL_PROXY=socks5://…` on CN/corporate machines. httpx turns a
+    SOCKS URL into an `ImportError` at client construction unless `socksio` is installed, so each
+    request would crash. Only forward http/https proxies; a SOCKS proxy needs `httpx[socks]`.
+    """
+    for name in ("TYPESAFE_HTTP_PROXY", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        url = os.environ.get(name)
+        if url and not url.lower().startswith("socks"):
+            return url
+    return None
 
 
 def post_json(url, key, body):

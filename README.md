@@ -109,11 +109,11 @@ uv run jev
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
+Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted. If the harness keeps attaching to your everyday Chrome (it probes ports 9222/9223 and takes the first CDP endpoint that answers), pin it to a dedicated Chrome for Testing instance with `BU_CDP_WS=ws://127.0.0.1:9223/devtools/browser/<id>` and the agent will only drive that browser; Jev will also print a warning when the attached browser already has personal tabs.
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Any OpenAI-compatible `/chat/completions` endpoint works as the text helper — set `TEXT_MODEL_BASE_URL`, `TEXT_MODEL`, and `TEXT_MODEL_REASONING` (see `.env.example`). That includes Gemini, GLM, DeepSeek, OpenAI-compatible local servers, and LLMTR. `TEXT_MODEL_REASONING` is optional: `none` disables it, `low`/`medium`/`high` request an effort level, and leaving it unset sends nothing.
 
-`TYPESAFE_API_KEY` comes from your [TypeSafe](https://docs.typesafe.ai) account (used for operation/target choice heads). `TEXT_MODEL_API_KEY` is the helper's key, only needed for runs that type text.
+`TYPESAFE_API_KEY` comes from your [TypeSafe](https://docs.typesafe.ai) account (used for operation/target choice heads). `TEXT_MODEL_API_KEY` is the helper's key, only needed for runs that type text. Model API traffic ignores SOCKS proxy environment variables (a `socks5://…` in `ALL_PROXY` would crash `httpx` without the optional `socksio` extra). Set `TYPESAFE_HTTP_PROXY=http://…` to route the API through an HTTP(S) proxy instead.
 
 ## Use the library
 
@@ -145,8 +145,8 @@ uv run --env-file .env python examples/run.py \
 - **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
-- **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
-- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
+- **Wait for useful state.** After typing into a combobox, or clicking one to open its menu, wait for visible options, capped at 300 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
+- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab. On platforms where emulation is not enough (e.g. Windows background tabs that stop painting modal menus), `Page.bringToFront` moves only the owned tab to the front when `TYPESAFE_FOREGROUND=1` (or the alias `JEV_FOREGROUND=1`).
 - **Send visible text.** Offscreen article bodies and footers do not fill the model context.
 - **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
 

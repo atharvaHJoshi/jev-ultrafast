@@ -172,7 +172,7 @@ class Agent:
                 url=state["page"]["url"],
                 elapsed_ms=state["elapsed_ms"],
             )
-            if state["record"]:
+            if state["record"] and state["page"].get("screenshot"):
                 (self.record_dir / f"{state['elapsed_ms']:06d}.jpg").write_bytes(
                     base64.b64decode(state["page"]["screenshot"])
                 )
