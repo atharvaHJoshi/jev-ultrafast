@@ -318,3 +318,32 @@ def test_navigation_during_prediction_reobserves_without_action(runner):
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_model_call_budget_blocks_after_max_steps_twice(runner, monkeypatch):
+    from jev_ultrafast.questions import MAX_STEPS
+
+    runner.state["decisions"] = [{"placeholder": i} for i in range(MAX_STEPS * 2)]
+    choose = Mock()
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state["browser"].fresh.return_value = True
+    with pytest.raises(ValueError, match="model-call budget"):
+        runner.command("predict")
+    choose.assert_not_called()
+
+
+def test_empty_first_observation_reobserves_before_choosing(runner, monkeypatch):
+    empty = deepcopy(page())
+    empty["actions"] = []
+    empty["fingerprint"] = fingerprint(empty)
+    full = page()
+    runner.state["page"] = empty
+    runner.state["browser"].fresh.return_value = True
+    runner.state["browser"].observe.return_value = full
+    runner.state["decisions"] = []
+    choose = Mock(return_value=decision())
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.command("predict")
+    assert runner.state["page"]["actions"]  # Re-observed, not predicted BLOCKED on an empty page.
+    assert choose.call_count == 1
+    assert len(runner.state["page"]["actions"]) == len(full["actions"])

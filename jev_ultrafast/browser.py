@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -11,7 +12,8 @@ from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
-MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+# Fast marker-only path skips the layout-heavy per-element guard scan; the marker never uses guards.
+MARKER = f"(() => {{ window.__jevFastSkipGuards=true; const state={READ_STATE}; return state?.marker ?? null; }})()"
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
@@ -20,10 +22,12 @@ class StalePage(ValueError):
 class Browser:
     def __init__(self, url):
         ensure_daemon()
-        self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
+        # A foreground owned tab prevents throttled painting of modal menus on some platforms (notably Windows).
+        background = os.environ.get("TYPESAFE_FOREGROUND") != "1"
+        self.target = cdp("Target.createTarget", url="about:blank", background=background)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
         self.call("Emulation.setDeviceMetricsOverride", width=1120, height=780, deviceScaleFactor=1, mobile=False)
-        # Keep rAF/menus rendering in an owned background tab, without activating the user's Chrome tab.
+        # Keep rAF/menus rendering in an owned tab, without activating the user's Chrome tab.
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
         self.call("Page.navigate", url=url)
         deadline = time.monotonic() + 15
